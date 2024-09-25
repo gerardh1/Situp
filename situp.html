@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Motion Capture Sit-ups</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/posenet"></script>
+    <style>
+        video, canvas {
+            display: block;
+            margin: 0 auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>Motion Capture Sit-ups</h1>
+    <p id="count">Sit-ups: 0</p>
+    <video id="video" width="640" height="480" autoplay></video>
+    <canvas id="canvas" width="640" height="480"></canvas>
+
+    <script>
+        let sitUpCount = 0;
+        let lastPosition = null;
+        let threshold = 100; // Adjust this threshold based on testing
+
+        async function setupCamera() {
+
+            navigator.mediaDevices = navigator.mediaDevices || {};
+	navigator.mediaDevices.getUserMedia = navigator.mediaDevices.getUserMedia ||
+		navigator.mediaDevices.webkitGetUserMedia ||
+		navigator.mediaDevices.mozGetUserMedia ||
+		navigator.mediaDevices.msGetUserMedia;
+
+	        // 璉��䰻瘚讛��膥�糓�炏�𣈲�� getUserMedia
+	       if (!navigator.mediaDevices.getUserMedia) {
+	    	    alert("getUserMedia")
+	        }
+            // Constraints for accessing the camera
+            const constraints = {
+                video: {
+                    facingMode: 'environment' // Use 'user' for front camera and 'environment' for rear camera
+                }
+};
+            const video = document.getElementById('video');
+            const stream = await  navigator.mediaDevices.getUserMedia(constraints);
+            video.srcObject = stream;
+
+            return new Promise((resolve) => {
+                video.onloadedmetadata = () => {
+                    resolve(video);
+                };
+            });
+        }
+
+        async function loadPosenet() {
+            const net = await posenet.load();
+            return net;
+        }
+
+        function detectSitUp(pose) {
+            const nose = pose.keypoints.find(point => point.part === 'nose');
+            if (nose && nose.score > 0.5) {
+                const y = nose.position.y;
+
+                if (lastPosition !== null) {
+                    const deltaY = Math.abs(y - lastPosition);
+
+                    if (deltaY > threshold) {
+                        sitUpCount++;
+                        document.getElementById('count').innerText = `Sit-ups: ${sitUpCount}`;
+                    }
+                }
+
+                lastPosition = y;
+            }
+        }
+
+        async function main() {
+            const video = await setupCamera();
+            const net = await loadPosenet();
+
+            video.play();
+
+            const canvas = document.getElementById('canvas');
+            const ctx = canvas.getContext('2d');
+
+            async function detect() {
+                const pose = await net.estimateSinglePose(video, {
+                    flipHorizontal: false
+                });
+
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+                pose.keypoints.forEach(point => {
+                    if (point.score > 0.5) {
+                        ctx.beginPath();
+                        ctx.arc(point.position.x, point.position.y, 5, 0, 2 * Math.PI);
+                        ctx.fillStyle = 'red';
+                        ctx.fill();
+                    }
+                });
+
+                detectSitUp(pose);
+
+                requestAnimationFrame(detect);
+            }
+
+            detect();
+        }
+
+        main();
+    </script>
+</body>
+</html>
